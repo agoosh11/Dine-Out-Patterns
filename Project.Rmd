@@ -1,0 +1,44 @@
+---
+title: "Testing Data"
+output: html_document
+date: "2023-11-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(sf)
+
+data_movements = read.csv("movements.csv")
+data_restaurant = read.csv("restaurants.csv")
+View(data_movements)
+View(data_restaurant)
+
+
+colnames(data_movements)
+
+# Load required packages
+library(sf)
+
+# Create an sf data frame with coordinates
+sf_coords <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
+
+# Check the resulting sf object
+sf_coords
+
+
+# Create an sf data frame with coordinates
+sf_coords <- st_as_sf(data_movements, coords = c(longitude, latitude), crs = 4326)
+
+# Transform coordinates to UTM (Zone 11)
+sf_coords_utm <- st_transform(sf_coords, crs = 26911)  # 26910 represents UTM Zone 10
+
+coord <- st_coordinates(sf_coords_utm)
+
+# Display the UTM coordinates
+View(coord)
+```
