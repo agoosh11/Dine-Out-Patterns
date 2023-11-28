@@ -16,43 +16,85 @@ library(lubridate) #for time calculations.
 
 data_movements = read.csv("movements.csv")
 data_restaurant = read.csv("restaurants.csv")
-View(data_movements)
-View(data_restaurant)
-
 
 colnames(data_movements)
+```
 
-# Load required packages
-library(sf)
+```{r}
+# Create an sf data frame with restaurant coordinates
+sf_movements <- st_as_sf(data_movements, coords = c("Longitude", "Latitude"), crs = 4326)
 
-# Create an sf data frame with coordinates
-sf_coords <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
+# Transform movements coordinates to UTM (assuming the same zone as restaurants)
+sf_movements_utm = st_transform(sf_movements, crs = 26911)
 
-# Check the resulting sf object
-sf_coords
+sf_movements_utm2 <- sf_movements_utm %>%
+  mutate(utm = st_coordinates(sf_movements_utm))
+```
 
-# Transform coordinates to UTM (Zone 11)
-sf_coords_utm <- st_transform(sf_coords, crs = 26911)  # 26910 represents UTM Zone 10
-
-coord <- st_coordinates(sf_coords_utm)
-
-# Display the UTM coordinates
-View(coord)
-
-
-          #update nov26
-
-# Convert 'datetime' column to POSIXct format (date and time)
-data_movements$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
+```{r}
+ #update nov26
 
 # Create an sf data frame with restaurant coordinates
 sf_restaurants <- st_as_sf(data_restaurant, coords = c("Longitude", "Latitude"), crs = 4326)
 
-# Define a radius for the restaurant circles (you can adjust this as needed)
-radius <- 100 # in meters, adjust according to the scale of your data
+# Transform movements coordinates to UTM (assuming the same zone as restaurants)
+sf_restaurants_utm = st_transform(sf_restaurants, crs = 26911)
 
+sf_restaurants_utm2 <- sf_restaurants_utm %>%
+  mutate(utm = st_coordinates(sf_restaurants_utm))
+
+```
+
+```{r}
+library(sf)
+library(ggplot2)
+# Function to create a buffer (radius) around a point in UTM units
+create_buffer <- function(lon, lat, radius_meters) {
+  # Create a data frame with the restaurant coordinates
+  restaurant <- data.frame(lon = lon, lat = lat)
+  
+  # Create an sf (Simple Features) point object
+  restaurant_sf <- st_as_sf(restaurant, coords = c("lon", "lat"), crs = 4326)
+  
+  # Project the point to UTM (change the UTM zone accordingly)
+  restaurant_sf_utm <- st_transform(restaurant_sf, crs = 26911)  # UTM zone 33N
+  
+  # Create a buffer around the point in UTM units
+  buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
+  
+  return(buffer)
+}
+
+# Restaurant coordinates (longitude and latitude)
+restaurant_lon <- data_restaurant$Longitude  # Replace with the actual longitude of the restaurant
+restaurant_lat <- data_restaurant$Latitude  # Replace with the actual latitude of the restaurant
+
+# Radius in meters
+radius_meters <- 500 # Replace with the desired radius in meters
+
+# Create a buffer around the restaurant location
+buffer_utm <- create_buffer(restaurant_lon, restaurant_lat, radius_meters)
+
+# Plot the result
+plot(st_geometry(buffer_utm), main = "Radius around Restaurant (UTM)", col = "lightblue", lwd = 1)
+
+points(x = restaurant_lon, y = restaurant_lat,col = "coral2" , pch = 16, cex = 2)  # Plot the restaurant location
+
+
+```
+
+
+```{r}
+library(htmltools)
+library(leaflet)
+leaflet()%>%
+  addTiles()%>%
+  addMarkers(lng = data_restaurant$Longitude, lat = data_restaurant$Latitude, popup = data_restaurant$Name)
+```
+
+```{r}
 # Create circles around restaurants
-sf_restaurants_circles <- st_buffer(sf_restaurants, dist = radius)
+sf_restaurants_circles <- st_buffer(sf_restaurants, dist = radius_meters)
 
 # Function to check if a point is inside any restaurant circle
 is_inside_restaurant_circle <- function(point, circles) {
@@ -61,47 +103,19 @@ is_inside_restaurant_circle <- function(point, circles) {
   })
   any(inside)
 }
+```
 
-# Convert movements data to sf
-sf_movements <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
-
-# Transform movements coordinates to UTM (assuming the same zone as restaurants)
-sf_movements_utm <- st_transform(sf_movements, crs = st_crs(sf_restaurants))
-
-# Create an empty data frame to store results
-results <- data.frame()
-
-# Loop through movements data to track time spent in restaurants
-for (i in 1:nrow(sf_movements_utm)) {
-  movement <- sf_movements_utm[i, ]
-  if (is_inside_restaurant_circle(movement, sf_restaurants_circles)) {
-    # This movement is inside a restaurant circle
-    current_datetime <- movement$datetime
-    person_id <- data_movements[i, "person_id"]
-    # Check the next movement entry within 15 minutes
-    next_movements <- sf_movements_utm[(i + 1):nrow(sf_movements_utm), ]
-    next_in_restaurant <- next_movements[sapply(next_movements, function(m) {
-      difftime(m$datetime, current_datetime, units = "mins") <= 15 &&
-      is_inside_restaurant_circle(m, sf_restaurants_circles)
-    }), ]
-    # If the person stays for longer than 15 minutes and less than 3 hours, record the stay
-    if (nrow(next_in_restaurant) > 0) {
-      exit_time <- min(next_in_restaurant$datetime)
-      stay_duration <- difftime(exit_time, current_datetime, units = "mins")
-      if (stay_duration >= 15 && stay_duration <= 180) {
-        results <- rbind(results, data.frame(person_id = person_id, enter_time = current_datetime, exit_time = exit_time, stay_duration = stay_duration))
-      }
-    }
-  }
-}
-
-# Filter out entries where a person might be an employee (stayed more than 3 hours)
-potential_employees <- results %>%
-  filter(stay_duration > 180)
-
-# Display the potential employees
-print(potential_employees)
-
-
+```{r}
+# Convert 'datetime' column to POSIXct format (date and time)
+sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
 
 ```
+
+```{r}
+View(sf_movements_utm)
+```
+
+```{r}
+
+```
+
