@@ -133,42 +133,37 @@ is_inside_restaurant_circle <- function(point, circles) {
 }
 
 # Function to filter movements within restaurant zones
-filter_movements_within_restaurant <- function(movements, buffers, restaurants) {
-
-  joined <- st_join(movements, buffers)
-  
-  # Spatial joins  
-  
-  joined$In_Restaurant <- !is.na(joined$id)
-
-  joined$Restaurant_ID <- restaurants$Restaurant_ID[joined$In_Restaurant]
+filter_movements_within_restaurant <- function(movements, circles, restaurants) {
+   # Perform a spatial join between movements and circles (restaurant buffers)
+   joined <- st_join(movements, circles, join = st_within)
    
-  if("Person_ID" %in% names(movements)) {
-
-    joined$Person_ID <- movements$Person_ID
-
-  } else {
-
-    joined$Person_ID <- NA
-  
-  }
-
-  selected <- st_drop_geometry(joined) # Remove geometry
-  
-  # Regular left_join now  
-  full_data <- left_join(selected, restaurants, by="Restaurant_ID")
-
-  return(full_data) 
-}
-
-
-# Filter movements based on criteria...
-colnames(sf_movements_utm2)
-head(sf_movements_utm2)
-
+   # Create In_Restaurant column based on the join
+   joined$In_Restaurant <- !is.na(joined$id)
+   
+   # If there's a match, extract Restaurant_ID, else set as NA
+   joined$Restaurant_ID <- ifelse(joined$In_Restaurant, restaurants$Restaurant_ID[joined$In_Restaurant], NA)
+   
+   # Extract Person_ID from movements if available
+   if ("Person_ID" %in% colnames(movements)) {
+     joined$Person_ID <- movements$Person_ID
+   } else {
+     joined$Person_ID <- NA
+   }
+   
+   # Clean up columns
+   result <- joined[, !(names(joined) %in% c("geometry", "id"))]
+   
+   result
+ }
 
 # Filter movements within restaurant zones
 movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, sf_restaurants_utm2)
+
+
+
+colnames(sf_movements_utm2)
+head(sf_movements_utm2)
+
 
 colnames(sf_movements_utm2)
 colnames(movements_within_restaurant)
