@@ -12,17 +12,20 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(dplyr)
 library(lubridate) #for time calculations.
+library(sf)
+library(sp)
 
 
 data_movements = read.csv("movements.csv")
 data_restaurant = read.csv("restaurants.csv")
 
 colnames(data_movements)
+colnames(data_restaurant)
 ```
 
 ```{r}
-# Create an sf data frame with restaurant coordinates
-sf_movements <- st_as_sf(data_movements, coords = c("Longitude", "Latitude"), crs = 4326)
+# Create an sf data frame with movements coordinates
+sf_movements <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
 
 # Transform movements coordinates to UTM (assuming the same zone as restaurants)
 sf_movements_utm = st_transform(sf_movements, crs = 26911)
@@ -35,7 +38,7 @@ sf_movements_utm2 <- sf_movements_utm %>%
  #update nov26
 
 # Create an sf data frame with restaurant coordinates
-sf_restaurants <- st_as_sf(data_restaurant, coords = c("Longitude", "Latitude"), crs = 4326)
+sf_restaurants <- st_as_sf(data_restaurant, coords = c("longitude", "latitude"), crs = 4326)
 
 # Transform movements coordinates to UTM (assuming the same zone as restaurants)
 sf_restaurants_utm = st_transform(sf_restaurants, crs = 26911)
@@ -46,7 +49,6 @@ sf_restaurants_utm2 <- sf_restaurants_utm %>%
 ```
 
 ```{r}
-library(sf)
 library(ggplot2)
 # Function to create a buffer (radius) around a point in UTM units
 create_buffer <- function(lon, lat, radius_meters) {
@@ -66,8 +68,8 @@ create_buffer <- function(lon, lat, radius_meters) {
 }
 
 # Restaurant coordinates (longitude and latitude)
-restaurant_lon <- data_restaurant$Longitude  # Replace with the actual longitude of the restaurant
-restaurant_lat <- data_restaurant$Latitude  # Replace with the actual latitude of the restaurant
+restaurant_lon <- data_restaurant$longitude  # Replace with the actual longitude of the restaurant
+restaurant_lat <- data_restaurant$latitude  # Replace with the actual latitude of the restaurant
 
 # Radius in meters
 radius_meters <- 500 # Replace with the desired radius in meters
@@ -89,7 +91,9 @@ library(htmltools)
 library(leaflet)
 leaflet()%>%
   addTiles()%>%
-  addMarkers(lng = data_restaurant$Longitude, lat = data_restaurant$Latitude, popup = data_restaurant$Name)
+  addMarkers(lng = data_restaurant$longitude, lat = data_restaurant$latitude, popup = data_restaurant$Name)
+
+colnames(data_restaurant)
 ```
 
 ```{r}
@@ -108,14 +112,124 @@ is_inside_restaurant_circle <- function(point, circles) {
 ```{r}
 # Convert 'datetime' column to POSIXct format (date and time)
 sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
+#ee
 
+
+# Function to create restaurant buffers
+create_buffer <- function(lon, lat, radius_meters) {
+  restaurant <- data.frame(lon = lon, lat = lat)
+  restaurant_sf <- st_as_sf(restaurant, coords = c("lon", "lat"), crs = 4326)
+  restaurant_sf_utm <- st_transform(restaurant_sf, crs = 26911)
+  buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
+  return(buffer)
+}
+
+# Function to check if a point is inside any restaurant circle
+is_inside_restaurant_circle <- function(point, circles) {
+  inside <- sapply(seq_along(circles), function(i) {
+    st_contains(circles[i], point)
+  })
+  any(inside)
+}
+
+# Function to filter movements within restaurant zones
+filter_movements_within_restaurant <- function(movements, buffers, restaurants) {
+
+  joined <- st_join(movements, buffers)
+  
+  # Spatial joins  
+  
+  joined$In_Restaurant <- !is.na(joined$id)
+
+  joined$Restaurant_ID <- restaurants$Restaurant_ID[joined$In_Restaurant]
+   
+  if("Person_ID" %in% names(movements)) {
+
+    joined$Person_ID <- movements$Person_ID
+
+  } else {
+
+    joined$Person_ID <- NA
+  
+  }
+
+  selected <- st_drop_geometry(joined) # Remove geometry
+  
+  # Regular left_join now  
+  full_data <- left_join(selected, restaurants, by="Restaurant_ID")
+
+  return(full_data) 
+}
+
+
+# Filter movements based on criteria...
+colnames(sf_movements_utm2)
+head(sf_movements_utm2)
+
+
+# Filter movements within restaurant zones
+movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, sf_restaurants_utm2)
+
+colnames(sf_movements_utm2)
+colnames(movements_within_restaurant)
+head(movements_within_restaurant)
+
+
+# Filter movements based on criteria
+filtered_movements <- movements_within_restaurant %>%
+  filter(In_Restaurant == TRUE) %>%
+  group_by(Person_ID, Restaurant_ID) %>%
+  mutate(Duration = difftime(lead(datetime), datetime, units = "mins")) %>%
+  filter(Duration >= 15 & Duration <= 180) %>%
+  ungroup()
+
+# Aggregate data to calculate total time spent by each person at each restaurant
+agg_data <- filtered_movements %>%
+  group_by(Person_ID, Restaurant_ID) %>%
+  summarise(Total_Time = sum(Duration, na.rm = TRUE))
+
+# Generate the final report
+final_report <- agg_data %>%
+  left_join(data_restaurant, by = c("Restaurant_ID" = "Restaurant_ID")) %>%
+  mutate(Person_ID = coalesce(`Restaurant_ID`, Person_ID)) %>%
+  arrange(Person_ID, desc(Total_Time))
+
+
+# Display the final report
+final_report
 ```
 
 ```{r}
 View(sf_movements_utm)
+view(sf_movements_utm2)
+
+# Extract and view the geometry column
+geometry_column <- st_geometry(sf_movements_utm2)
+print(geometry_column)
+
+colnames(agg_data)
+colnames(data_restaurant)
+
 ```
 
 ```{r}
+# Check column names in agg_data and data_restaurant
+colnames(agg_data)
+colnames(data_restaurant)
+
+# Display a few rows of agg_data
+head(agg_data)
+
+# Display a few rows of data_restaurant
+head(data_restaurant)
+
+# Check unique values in Restaurant_ID column of agg_data
+unique(agg_data$Restaurant_ID)
+
+# Check unique values in Restaurant.ID column of data_restaurant
+unique(data_restaurant$Restaurant.ID)
+
+
 
 ```
 
