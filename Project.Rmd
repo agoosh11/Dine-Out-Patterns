@@ -32,6 +32,8 @@ sf_movements_utm = st_transform(sf_movements, crs = 26911)
 
 sf_movements_utm2 <- sf_movements_utm %>%
   mutate(utm = st_coordinates(sf_movements_utm))
+
+colnames(sf_movements_utm2)
 ```
 
 ```{r}
@@ -45,6 +47,8 @@ sf_restaurants_utm = st_transform(sf_restaurants, crs = 26911)
 
 sf_restaurants_utm2 <- sf_restaurants_utm %>%
   mutate(utm = st_coordinates(sf_restaurants_utm))
+
+head(sf_restaurants_utm2)
 
 ```
 
@@ -72,7 +76,7 @@ restaurant_lon <- data_restaurant$longitude  # Replace with the actual longitude
 restaurant_lat <- data_restaurant$latitude  # Replace with the actual latitude of the restaurant
 
 # Radius in meters
-radius_meters <- 500 # Replace with the desired radius in meters
+radius_meters <- 50 # Replace with the desired radius in meters
 
 # Create a buffer around the restaurant location
 buffer_utm <- create_buffer(restaurant_lon, restaurant_lat, radius_meters)
@@ -93,7 +97,7 @@ leaflet()%>%
   addTiles()%>%
   addMarkers(lng = data_restaurant$longitude, lat = data_restaurant$latitude, popup = data_restaurant$Name)
 
-colnames(data_restaurant)
+head(sf_restaurants)
 ```
 
 ```{r}
@@ -107,6 +111,7 @@ is_inside_restaurant_circle <- function(point, circles) {
   })
   any(inside)
 }
+
 ```
 
 ```{r}
@@ -144,14 +149,14 @@ filter_movements_within_restaurant <- function(movements, circles, restaurants) 
    joined$Restaurant_ID <- ifelse(joined$In_Restaurant, restaurants$Restaurant_ID[joined$In_Restaurant], NA)
    
    # Extract Person_ID from movements if available
-   if ("Person_ID" %in% colnames(movements)) {
-     joined$Person_ID <- movements$Person_ID
+   if ("id" %in% colnames(movements)) {
+     joined$id <- movements$id
    } else {
-     joined$Person_ID <- NA
+     joined$id <- NA
    }
    
    # Clean up columns
-   result <- joined[, !(names(joined) %in% c("geometry", "id"))]
+   result <- joined[, !(names(joined) %in% c("geometry", "Person_ID"))]
    
    result
  }
@@ -159,13 +164,6 @@ filter_movements_within_restaurant <- function(movements, circles, restaurants) 
 # Filter movements within restaurant zones
 movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, sf_restaurants_utm2)
 
-
-
-colnames(sf_movements_utm2)
-head(sf_movements_utm2)
-
-
-colnames(sf_movements_utm2)
 colnames(movements_within_restaurant)
 head(movements_within_restaurant)
 
@@ -173,20 +171,22 @@ head(movements_within_restaurant)
 # Filter movements based on criteria
 filtered_movements <- movements_within_restaurant %>%
   filter(In_Restaurant == TRUE) %>%
-  group_by(Person_ID, Restaurant_ID) %>%
+  group_by(id, Restaurant_ID) %>%
   mutate(Duration = difftime(lead(datetime), datetime, units = "mins")) %>%
   filter(Duration >= 15 & Duration <= 180) %>%
   ungroup()
 
 # Aggregate data to calculate total time spent by each person at each restaurant
 agg_data <- filtered_movements %>%
-  group_by(Person_ID, Restaurant_ID) %>%
+  group_by(id, Restaurant_ID) %>%
   summarise(Total_Time = sum(Duration, na.rm = TRUE))
+
+
 
 # Generate the final report
 final_report <- agg_data %>%
   left_join(data_restaurant, by = c("Restaurant_ID" = "Restaurant_ID")) %>%
-  mutate(Person_ID = coalesce(`Restaurant_ID`, Person_ID)) %>%
+  mutate(Person_ID = coalesce(`Restaurant_ID`, id)) %>%
   arrange(Person_ID, desc(Total_Time))
 
 
