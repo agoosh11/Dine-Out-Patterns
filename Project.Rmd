@@ -19,7 +19,7 @@ library(sp)
 data_movements = read.csv("movements.csv")
 data_restaurant = read.csv("restaurants.csv")
 
-colnames(data_movements)
+head(data_movements)
 colnames(data_restaurant)
 ```
 
@@ -33,7 +33,11 @@ sf_movements_utm = st_transform(sf_movements, crs = 26911)
 sf_movements_utm2 <- sf_movements_utm %>%
   mutate(utm = st_coordinates(sf_movements_utm))
 
+# Convert 'datetime' column to POSIXct format (date and time)
+sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
+
 colnames(sf_movements_utm2)
+head(sf_movements_utm2)
 ```
 
 ```{r}
@@ -47,6 +51,8 @@ sf_restaurants_utm = st_transform(sf_restaurants, crs = 26911)
 
 sf_restaurants_utm2 <- sf_restaurants_utm %>%
   mutate(utm = st_coordinates(sf_restaurants_utm))
+
+
 
 head(sf_restaurants_utm2)
 
@@ -67,6 +73,11 @@ create_buffer <- function(lon, lat, radius_meters) {
   
   # Create a buffer around the point in UTM units
   buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
+  
+  # Extracting centroid coordinates (utm.X and utm.Y) for each polygon in buffer
+  buffer$utm <- st_centroid(buffer)  # Compute centroid
+  buffer$utm.X <- st_coordinates(buffer$utm)[, "X"]  # Extract UTM X coordinate
+  buffer$utm.Y <- st_coordinates(buffer$utm)[, "Y"]  # Extract UTM Y coordinate
   
   return(buffer)
 }
@@ -100,23 +111,9 @@ leaflet()%>%
 head(sf_restaurants)
 ```
 
-```{r}
-# Create circles around restaurants
-sf_restaurants_circles <- st_buffer(sf_restaurants, dist = radius_meters)
-
-# Function to check if a point is inside any restaurant circle
-is_inside_restaurant_circle <- function(point, circles) {
-  inside <- sapply(seq_along(circles), function(i) {
-    st_contains(circles[i], point)
-  })
-  any(inside)
-}
-
-```
 
 ```{r}
-# Convert 'datetime' column to POSIXct format (date and time)
-sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
+
 #ee
 
 
@@ -138,50 +135,46 @@ is_inside_restaurant_circle <- function(point, circles) {
 }
 
 # Function to filter movements within restaurant zones
-filter_movements_within_restaurant <- function(movements, circles, restaurants) {
-   # Perform a spatial join between movements and circles (restaurant buffers)
-   joined <- st_join(movements, circles, join = st_within)
-   
-   # Create In_Restaurant column based on the join
-   joined$In_Restaurant <- !is.na(joined$id)
-   
-   # If there's a match, extract Restaurant_ID, else set as NA
-   joined$Restaurant_ID <- ifelse(joined$In_Restaurant, restaurants$Restaurant_ID[joined$In_Restaurant], NA)
-   
-   # Extract Person_ID from movements if available
-   if ("id" %in% colnames(movements)) {
-     joined$id <- movements$id
-   } else {
-     joined$id <- NA
-   }
-   
-   # Clean up columns
-   result <- joined[, !(names(joined) %in% c("geometry", "Person_ID"))]
-   
-   result
- }
+filter_movements_within_restaurant <- function(movements, circles) {
+  inside <- st_within(movements, circles)
+  movements_inside <- movements[unlist(inside), ]
+  
+  return(movements_inside)
+}
 
 # Filter movements within restaurant zones
-movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, sf_restaurants_utm2)
+movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm)
+
+# Function to assign restaurant IDs after filtering
+assign_restaurant_ids <- function(filtered_movements, restaurants) {
+
+  return(joined)
+}
+
+# Assign restaurant IDs to filtered movements
+movements_with_restaurant_ids <- assign_restaurant_ids(movements_within_restaurant, sf_restaurants_utm2)
+
 
 colnames(movements_within_restaurant)
-head(movements_within_restaurant)
+head(movements_within_restaurant, 100)
+head(sf_movements_utm2)
 
 
 # Filter movements based on criteria
 filtered_movements <- movements_within_restaurant %>%
   filter(In_Restaurant == TRUE) %>%
-  group_by(id, Restaurant_ID) %>%
   mutate(Duration = difftime(lead(datetime), datetime, units = "mins")) %>%
   filter(Duration >= 15 & Duration <= 180) %>%
   ungroup()
+
+view(filtered_movements)
 
 # Aggregate data to calculate total time spent by each person at each restaurant
 agg_data <- filtered_movements %>%
   group_by(id, Restaurant_ID) %>%
   summarise(Total_Time = sum(Duration, na.rm = TRUE))
 
-
+head(agg_data)
 
 # Generate the final report
 final_report <- agg_data %>%
@@ -197,7 +190,7 @@ final_report
 ```{r}
 View(sf_movements_utm)
 view(sf_movements_utm2)
-
+head(buffer_utm)
 # Extract and view the geometry column
 geometry_column <- st_geometry(sf_movements_utm2)
 print(geometry_column)
