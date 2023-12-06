@@ -24,8 +24,56 @@ colnames(data_restaurant)
 ```
 
 ```{r}
+sf_movements00 <- data_movements %>%
+  filter(id == "I000") %>%
+  head(40000)
+
+sf_movements01 <- data_movements %>%
+  filter(id == "I001") %>%
+  head(40000)
+
+sf_movements02 <- data_movements %>%
+  filter(id == "I002") %>%
+  head(40000)
+
+sf_movements03 <- data_movements %>%
+  filter(id == "I003") %>%
+  head(40000)
+
+sf_movements04 <- data_movements %>%
+  filter(id == "I004") %>%
+  head(40000)
+
+sf_movements05 <- data_movements %>%
+  filter(id == "I005") %>%
+  head(40000)
+
+sf_movements06 <- data_movements %>%
+  filter(id == "I006") %>%
+  head(40000)
+
+sf_movements07 <- data_movements %>%
+  filter(id == "I007") %>%
+  head(40000)
+
+sf_movements08 <- data_movements %>%
+  filter(id == "I008") %>%
+  head(40000)
+
+sf_movements09 <- data_movements %>%
+  filter(id == "I009") %>%
+  head(40000)
+
+
+sf_movement <- rbind(sf_movements00, sf_movements01, sf_movements02, sf_movements03, sf_movements04, sf_movements05, sf_movements06, sf_movements07, 
+                      sf_movements08, sf_movements09)
+
+View(sf_movement)
+```
+
+```{r}
 # Create an sf data frame with movements coordinates
-sf_movements <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
+sf_movements <- st_as_sf(sf_movement, coords = c("longitude", "latitude"), crs = 4326)
 
 # Transform movements coordinates to UTM (assuming the same zone as restaurants)
 sf_movements_utm = st_transform(sf_movements, crs = 26911)
@@ -33,7 +81,8 @@ sf_movements_utm = st_transform(sf_movements, crs = 26911)
 sf_movements_utm2 <- sf_movements_utm %>%
   mutate(utm = st_coordinates(sf_movements_utm))
 
-colnames(sf_movements_utm2)
+
+View(sf_movements_utm2)
 ```
 
 ```{r}
@@ -49,13 +98,13 @@ sf_restaurants_utm2 <- sf_restaurants_utm %>%
   mutate(utm = st_coordinates(sf_restaurants_utm))
 
 head(sf_restaurants_utm2)
-
+View(sf_restaurants_utm2)
 ```
 
 ```{r}
 library(ggplot2)
 # Function to create a buffer (radius) around a point in UTM units
-create_buffer <- function(lon, lat, radius_meters) {
+create_buffer <- function(restaurant_id, res_name, lon, lat, radius_meters) {
   # Create a data frame with the restaurant coordinates
   restaurant <- data.frame(lon = lon, lat = lat)
   
@@ -64,9 +113,15 @@ create_buffer <- function(lon, lat, radius_meters) {
   
   # Project the point to UTM (change the UTM zone accordingly)
   restaurant_sf_utm <- st_transform(restaurant_sf, crs = 26911)  # UTM zone 33N
-  
   # Create a buffer around the point in UTM units
   buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
+  
+  # Extracting centroid coordinates (utm.X and utm.Y) for each polygon in buffer
+  buffer$resID <- restaurant_id
+  buffer$res_name <- res_name
+  buffer$utm <- st_centroid(buffer)  # Compute centroid
+  buffer$utm.X <- st_coordinates(buffer$utm)[, "X"]  # Extract UTM X coordinate
+  buffer$utm.Y <- st_coordinates(buffer$utm)[, "Y"]  # Extract UTM Y coordinate
   
   return(buffer)
 }
@@ -79,12 +134,15 @@ restaurant_lat <- data_restaurant$latitude  # Replace with the actual latitude o
 radius_meters <- 50 # Replace with the desired radius in meters
 
 # Create a buffer around the restaurant location
-buffer_utm <- create_buffer(restaurant_lon, restaurant_lat, radius_meters)
+buffer_utm <- create_buffer(sf_restaurants_utm2$Restaurant_ID, sf_restaurants_utm2$Name, restaurant_lon, restaurant_lat, radius_meters)
 
 # Plot the result
 plot(st_geometry(buffer_utm), main = "Radius around Restaurant (UTM)", col = "lightblue", lwd = 1)
 
 points(x = restaurant_lon, y = restaurant_lat,col = "coral2" , pch = 16, cex = 2)  # Plot the restaurant location
+
+colnames(buffer_utm)
+View(buffer_utm)
 
 
 ```
@@ -101,73 +159,42 @@ head(sf_restaurants)
 ```
 
 ```{r}
-# Create circles around restaurants
-sf_restaurants_circles <- st_buffer(sf_restaurants, dist = radius_meters)
+# # Create circles around restaurants
+# sf_restaurants_circles <- st_buffer(sf_restaurants_utm2, dist = radius_meters)
+# 
+# # Function to check if a point is inside any restaurant circle
+# is_inside_restaurant_circle <- function(point, circles) {
+#   inside <- sapply(seq_along(circles), function(i) {
+#     st_contains(circles[i], point)
+#   })
+#   any(inside)
+# }
+# 
+# View(sf_restaurants_circles)
+```
 
-# Function to check if a point is inside any restaurant circle
-is_inside_restaurant_circle <- function(point, circles) {
-  inside <- sapply(seq_along(circles), function(i) {
-    st_contains(circles[i], point)
-  })
-  any(inside)
+```{r}
+
+library(sf)
+
+# Function to filter movements within restaurant zones
+filter_movements_within_restaurant <- function(movements, circles, res_name) {
+  
+  inside <- st_within(movements, circles)
+  movements_inside <- movements[unlist(inside), ]
+  return(movements_inside)
 }
+
+# Filter movements within restaurant zones
+movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, buffer_utm$res_name)
+
+colnames(buffer_utm)
+head(movements_within_restaurant)
+View(movements_within_restaurant)
 
 ```
 
 ```{r}
-# Convert 'datetime' column to POSIXct format (date and time)
-sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
-#ee
-
-
-# Function to create restaurant buffers
-create_buffer <- function(lon, lat, radius_meters) {
-  restaurant <- data.frame(lon = lon, lat = lat)
-  restaurant_sf <- st_as_sf(restaurant, coords = c("lon", "lat"), crs = 4326)
-  restaurant_sf_utm <- st_transform(restaurant_sf, crs = 26911)
-  buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
-  return(buffer)
-}
-
-# Function to check if a point is inside any restaurant circle
-is_inside_restaurant_circle <- function(point, circles) {
-  inside <- sapply(seq_along(circles), function(i) {
-    st_contains(circles[i], point)
-  })
-  any(inside)
-}
-
-# Function to filter movements within restaurant zones
-filter_movements_within_restaurant <- function(movements, circles, restaurants) {
-   # Perform a spatial join between movements and circles (restaurant buffers)
-   joined <- st_join(movements, circles, join = st_within)
-   
-   # Create In_Restaurant column based on the join
-   joined$In_Restaurant <- !is.na(joined$id)
-   
-   # If there's a match, extract Restaurant_ID, else set as NA
-   joined$Restaurant_ID <- ifelse(joined$In_Restaurant, restaurants$Restaurant_ID[joined$In_Restaurant], NA)
-   
-   # Extract Person_ID from movements if available
-   if ("id" %in% colnames(movements)) {
-     joined$id <- movements$id
-   } else {
-     joined$id <- NA
-   }
-   
-   # Clean up columns
-   result <- joined[, !(names(joined) %in% c("geometry", "Person_ID"))]
-   
-   result
- }
-
-# Filter movements within restaurant zones
-movements_within_restaurant <- filter_movements_within_restaurant(sf_movements_utm2, buffer_utm, sf_restaurants_utm2)
-
-colnames(movements_within_restaurant)
-head(movements_within_restaurant)
-
-
 # Filter movements based on criteria
 filtered_movements <- movements_within_restaurant %>%
   filter(In_Restaurant == TRUE) %>%
@@ -194,10 +221,8 @@ final_report <- agg_data %>%
 final_report
 ```
 
-```{r}
-View(sf_movements_utm)
-view(sf_movements_utm2)
 
+```{r}
 # Extract and view the geometry column
 geometry_column <- st_geometry(sf_movements_utm2)
 print(geometry_column)
