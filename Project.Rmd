@@ -1,5 +1,5 @@
 ---
-title: "Testing Data"
+title: "DataScience Final Project"
 output: html_document
 date: "2023-11-03"
 ---
@@ -23,16 +23,15 @@ colnames(data_restaurant)
 ```
 
 ```{r}
-# Create an sf data frame with movements coordinates
+# Create an sf with movements coordinates
 sf_movements <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
 
-# Transform movements coordinates to UTM (assuming the same zone as restaurants)
+# Transform movements coordinates to UTM 
 sf_movements_utm = st_transform(sf_movements, crs = 26911)
 
 sf_movements_utm2 <- sf_movements_utm %>%
   mutate(utm = st_coordinates(sf_movements_utm))
 
-# Convert 'datetime' column to POSIXct format (date and time)
 sf_movements_utm2$datetime <- as.POSIXct(data_movements$datetime, format = "%Y-%m-%d %H:%M:%S")
 
 colnames(sf_movements_utm2)
@@ -41,20 +40,17 @@ head(sf_movements_utm2)
 ```
 
 ```{r}
- #update nov26
 
-# Create an sf data frame with restaurant coordinates
+# Create an sf with restaurant coordinates
 sf_restaurants <- st_as_sf(data_restaurant, coords = c("longitude", "latitude"), crs = 4326)
 
 
 
-# Transform movements coordinates to UTM (assuming the same zone as restaurants)
+# Transform to UTM
 sf_restaurants_utm = st_transform(sf_restaurants, crs = 26911)
 
 sf_restaurants_utm2 <- sf_restaurants_utm %>%
   mutate(utm = st_coordinates(sf_restaurants_utm))
-
-
 
 head(sf_restaurants_utm2)
 
@@ -64,20 +60,15 @@ head(sf_restaurants_utm2)
 library(ggplot2)
 # Function to create a buffer (radius) around a point in UTM units
 create_buffer <- function(lon, lat, radius_meters, resID,  resName, resCat) {
-  # Create a data frame with the restaurant coordinates and ID
   restaurant <- data.frame(lon = lon, lat = lat, Restaurant_ID = resID, Restaurant_Name = resName, Restaurant_Category = resCat)
-  
-  # Create an sf (Simple Features) point object
   restaurant_sf <- st_as_sf(restaurant, coords = c("lon", "lat"), crs = 4326)
-  
-  # Project the point to UTM (change the UTM zone accordingly)
-  restaurant_sf_utm <- st_transform(restaurant_sf, crs = 26911)  # UTM zone 33N
+  restaurant_sf_utm <- st_transform(restaurant_sf, crs = 32610)  # UTM zone 33N
   
   # Create a buffer around the point in UTM units
   buffer <- st_buffer(restaurant_sf_utm, dist = radius_meters)
   
-  # Extracting centroid coordinates (utm.X and utm.Y) for each polygon in buffer
-  buffer$utm <- st_centroid(buffer)  # Compute centroid
+  # Extracting centroid
+  buffer$utm <- st_centroid(buffer)
   buffer$utm.X <- st_coordinates(buffer$utm)[, "X"]  # Extract UTM X coordinate
   buffer$utm.Y <- st_coordinates(buffer$utm)[, "Y"]  # Extract UTM Y coordinate
   
@@ -88,9 +79,9 @@ create_buffer <- function(lon, lat, radius_meters, resID,  resName, resCat) {
 }
 
 
-# Restaurant coordinates (longitude and latitude)
-restaurant_lon <- data_restaurant$longitude  # Replace with the actual longitude of the restaurant
-restaurant_lat <- data_restaurant$latitude  # Replace with the actual latitude of the restaurant
+# Restaurant coordinates
+restaurant_lon <- data_restaurant$longitude
+restaurant_lat <- data_restaurant$latitude
 restaurant_ID <- data_restaurant$Restaurant_ID
 restaurant_name <- data_restaurant$Name
 restaurant_category <- data_restaurant$Category
@@ -98,11 +89,8 @@ restaurant_category <- data_restaurant$Category
 # Radius in meters
 radius_meters <- 50 # Replace with the desired radius in meters
 
-# Create a buffer around the restaurant location
-sf_restaurants_utm2 <- st_buffer(sf_restaurants_utm2, dist = radius_meters)
-
 buffer_utm <- create_buffer(restaurant_lon, restaurant_lat, radius_meters, restaurant_ID, restaurant_name, restaurant_category)
-
+#NOTE: buffer utm is not used. its only to plot the graph
 #view(buffer_utm)
 
 # Plot the result
@@ -133,101 +121,105 @@ head(sf_restaurants)
 #   return(movements_inside)
 # }
 
-movements_within <- st_within(sf_movements_utm2, sf_restaurants_utm2, sparse  = FALSE)
+# Create a buffer around the restaurant location
 
-view(as.data.frame(movements_within))
+sf_restaurants_utm2 <- st_buffer(sf_restaurants_utm2, dist = radius_meters)
 
+movements_within <- st_within(sf_movements_utm2, sf_restaurants_utm2)
 x <- as.data.frame(movements_within)
 
-class(x)
-
-
-# Create a combined dataframe
 combined_df <- data.frame()
 
-for(i in 1:10) {
+for(i in 1:1000) {
 
   movement_row <- data_movements[x$row.id[i], ]
 
   restaurant_row <- data_restaurant[x$col.id[i], ]
   restaurant_row <- subset(restaurant_row, select = c("Restaurant_ID", "Name", "Category"))
   # Combine the two rows
-
   combined_row <- cbind(movement_row, restaurant_row)
-
   # Add the combined row to the final dataframe
-
   combined_df <- rbind(combined_df, combined_row)
 
 }
 
+# Create a lagging and leading Restaurant ID, to compute visit duration
 combined_df <- combined_df %>%
   mutate(Restaurant_ID_Lag = lag(Restaurant_ID, n = 1, default = NA))
 
 combined_df <- combined_df %>%
   mutate(Restaurant_ID_Lead = lead(Restaurant_ID, n = 1, default = NA))
 
-# Display the final report
-#final_report
+
+
+# Function to calculate visit duration
+# calculate_visit_duration <- function(data) {
+#   result <- vector('numeric', length = nrow(data))
+#   
+#   for (i in 1:nrow(data)) {
+#     if (i == nrow(data) || data$Restaurant_ID[i] != data$Restaurant_ID_Lead[i]) {
+#       result[i] <- as.numeric(difftime(data$datetime[i], data$datetime[which(data$Restaurant_ID == data$Restaurant_ID[i])[1]], units = "mins"))
+#     } else {
+#       result[i] <- 0  # Initialize as 0 for rows where the next row has the same Restaurant_ID
+#     }
+#   }
+#   
+#   return(result)
+# }
+# 
+# # Calculate visit duration using the function
+# combined_df$visit_duration <- calculate_visit_duration(combined_df)
+
+
+# Function to calculate visit duration, entry time, and exit time in minutes
+calculate_visit_info <- function(data) {
+  visit_duration <- vector('numeric', length = nrow(data))
+  entry_time <- rep(NA, nrow(data))
+  exit_time <- rep(NA, nrow(data))
+  
+  for (i in 1:nrow(data)) {
+    if (i == nrow(data) || data$Restaurant_ID[i] != data$Restaurant_ID_Lead[i]) {
+      entry_time[i] <- data$datetime[which(data$Restaurant_ID == data$Restaurant_ID[i])[1]]
+      exit_time[i] <- data$datetime[i]
+      visit_duration[i] <- as.numeric(difftime(exit_time[i], entry_time[i], units = "mins"))
+    } else {
+      visit_duration[i] <- 0  # Initialize as 0 for rows where the next row has the same Restaurant_ID
+    }
+  }
+  
+  return(data.frame(entry_time, exit_time, visit_duration))
+}
+
+# Calculate visit info using the function
+visit_info <- calculate_visit_info(combined_df)
+
+# Merge the calculated visit info with the original dataframe
+combined_df <- cbind(combined_df, visit_info)
+
+# View the dataframe with visit duration
+view(combined_df)
+
+filter_visit_duration <- function(data) {
+  filtered_data <- data %>%
+    filter(visit_duration > 20 & visit_duration < 180) %>%
+    select(id, Restaurant_ID, Name, Category, entry_time, exit_time, visit_duration)
+  
+  return(filtered_data)
+}
+
+# Apply the filter function to combined_df
+filtered_combined_df <- filter_visit_duration(combined_df)
+
+# Viewing the filtered data
+view(filtered_combined_df)
+
+head(filtered_combined_df, n = 25)
 ```
 
 ```{r}
 
-# Get datetime values for indices
-datetime <- data_movements$datetime[indices]
-
-# Get id values for indices  
-id <- data_movements$id[indices]
-
-# Get restaurant ids
-res_ids <- unlist(movements_within) 
-
-# Create dataframe 
-movements_subset <- data.frame(datetime, id)
-movements_subset$resID <- res_ids
-
-view(movements_subset)
-
-
-
-
-
-View(sf_movements_utm)
-head(sf_movements_utm2)
-head(sf_restaurants_utm2)
-# Extract and view the geometry column
-geometry_column <- st_geometry(sf_movements_utm2)
-print(geometry_column)
-
-colnames(data_movements)
-colnames(data_restaurant)
 
 
 ```
 
-```{r}
-# Check column names in agg_data and data_restaurant
-colnames(agg_data)
-colnames(data_restaurant)
-
-# Display a few rows of agg_data
-head(agg_data)
-
-# Display a few rows of data_restaurant
-head(data_restaurant)
-
-# Check unique values in Restaurant_ID column of agg_data
-unique(agg_data$Restaurant_ID)
-
-# Check unique values in Restaurant.ID column of data_restaurant
-unique(data_restaurant$Restaurant.ID)
-
-head(data_movements)
-view(data_restaurant)
-
-#lasdka
-
-
-
-```
 
