@@ -23,54 +23,6 @@ colnames(data_restaurant)
 ```
 
 ```{r}
-sf_movements00 <- data_movements %>%
-  filter(id == "I000") %>%
-  head(40000)
-
-sf_movements01 <- data_movements %>%
-  filter(id == "I001") %>%
-  head(40000)
-
-sf_movements02 <- data_movements %>%
-  filter(id == "I002") %>%
-  head(40000)
-
-sf_movements03 <- data_movements %>%
-  filter(id == "I003") %>%
-  head(40000)
-
-sf_movements04 <- data_movements %>%
-  filter(id == "I004") %>%
-  head(40000)
-
-sf_movements05 <- data_movements %>%
-  filter(id == "I005") %>%
-  head(40000)
-
-sf_movements06 <- data_movements %>%
-  filter(id == "I006") %>%
-  head(40000)
-
-sf_movements07 <- data_movements %>%
-  filter(id == "I007") %>%
-  head(40000)
-
-sf_movements08 <- data_movements %>%
-  filter(id == "I008") %>%
-  head(40000)
-
-sf_movements09 <- data_movements %>%
-  filter(id == "I009") %>%
-  head(40000)
-
-
-sf_movement <- rbind(sf_movements00, sf_movements01, sf_movements02, sf_movements03, sf_movements04, sf_movements05, sf_movements06, sf_movements07, 
-                      sf_movements08, sf_movements09)
-
-
-```
-
-```{r}
 # Create an sf data frame with movements coordinates
 sf_movements <- st_as_sf(data_movements, coords = c("longitude", "latitude"), crs = 4326)
 
@@ -147,12 +99,11 @@ restaurant_category <- data_restaurant$Category
 radius_meters <- 50 # Replace with the desired radius in meters
 
 # Create a buffer around the restaurant location
-
 sf_restaurants_utm2 <- st_buffer(sf_restaurants_utm2, dist = radius_meters)
 
 buffer_utm <- create_buffer(restaurant_lon, restaurant_lat, radius_meters, restaurant_ID, restaurant_name, restaurant_category)
 
-view(buffer_utm)
+#view(buffer_utm)
 
 # Plot the result
 plot(st_geometry(buffer_utm), main = "Radius around Restaurant (UTM)", col = "lightblue", lwd = 1)
@@ -173,28 +124,76 @@ leaflet()%>%
 head(sf_restaurants)
 ```
 
-
 ```{r}
+# 
+# filter_movements_within_restaurant <- function(movements, circles) {
+#   
+#   inside <- st_within(movements, circles)
+#   movements_inside <- movements[unlist(inside), ]
+#   return(movements_inside)
+# }
 
-filter_movements_within_restaurant <- function(movements, circles) {
-  
-  inside <- st_within(movements, circles)
-  movements_inside <- movements[unlist(inside), ]
-  return(movements_inside)
+movements_within <- st_within(sf_movements_utm2, sf_restaurants_utm2, sparse  = FALSE)
+
+view(as.data.frame(movements_within))
+
+x <- as.data.frame(movements_within)
+
+class(x)
+
+
+# Create a combined dataframe
+combined_df <- data.frame()
+
+for(i in 1:10) {
+
+  movement_row <- data_movements[x$row.id[i], ]
+
+  restaurant_row <- data_restaurant[x$col.id[i], ]
+  restaurant_row <- subset(restaurant_row, select = c("Restaurant_ID", "Name", "Category"))
+  # Combine the two rows
+
+  combined_row <- cbind(movement_row, restaurant_row)
+
+  # Add the combined row to the final dataframe
+
+  combined_df <- rbind(combined_df, combined_row)
+
 }
 
-# Call function
-movements_within <- st_within(sf_movements_utm2, sf_restaurants_utm2, sparse = FALSE)
+combined_df <- combined_df %>%
+  mutate(Restaurant_ID_Lag = lag(Restaurant_ID, n = 1, default = NA))
 
-head(movements_within)
+combined_df <- combined_df %>%
+  mutate(Restaurant_ID_Lead = lead(Restaurant_ID, n = 1, default = NA))
 
 # Display the final report
 #final_report
 ```
 
 ```{r}
+
+# Get datetime values for indices
+datetime <- data_movements$datetime[indices]
+
+# Get id values for indices  
+id <- data_movements$id[indices]
+
+# Get restaurant ids
+res_ids <- unlist(movements_within) 
+
+# Create dataframe 
+movements_subset <- data.frame(datetime, id)
+movements_subset$resID <- res_ids
+
+view(movements_subset)
+
+
+
+
+
 View(sf_movements_utm)
-view(sf_movements_utm2)
+head(sf_movements_utm2)
 head(sf_restaurants_utm2)
 # Extract and view the geometry column
 geometry_column <- st_geometry(sf_movements_utm2)
@@ -225,6 +224,8 @@ unique(data_restaurant$Restaurant.ID)
 
 head(data_movements)
 view(data_restaurant)
+
+#lasdka
 
 
 
