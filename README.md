@@ -7,10 +7,9 @@ Data Sources
   The project uses two main datasets:
   
   Movements Data (movements.csv):
-  
   Contains information about movements with coordinates (longitude and latitude) and timestamp.
-  Restaurant Data (restaurants.csv):
   
+  Restaurant Data (restaurants.csv):
   Includes details about various restaurants, such as Restaurant_ID, Name, Category, and coordinates.
 
 How to Use:
